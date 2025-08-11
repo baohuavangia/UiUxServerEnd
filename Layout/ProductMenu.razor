@@ -1,0 +1,64 @@
+﻿@using MenShopBlazor.DTOs.Category
+@using MenShopBlazor.Services.Category
+@using MenShopBlazor.Services.Collection
+@using MenShopBlazor.DTOs.Collection.ViewModel
+@inject ICollectionService CollectionService
+@inject ICategoryService CategoryService
+
+<MudHidden Breakpoint="Breakpoint.MdAndDown">
+    <MudStack Row="true" Spacing="2">
+        @if (_loading)
+        {
+            <MudText>Đang tải menu...</MudText>
+        }
+        else
+        {
+            @foreach (var group in GroupedCategories)
+            {
+                <MudMenu Label="@group.Key">
+                    @foreach (var cat in group)
+                    {
+                        <MudMenuItem OnClick="@(() => NavigateToCategory(cat.CategoryId))">@cat.Name</MudMenuItem>
+                    }
+                </MudMenu>
+            }
+        }
+            <MudMenu Label="Bộ sưu tập">
+                 <MudMenuItem OnClick="@(() => NavigateToCategory(collection.CollectionId))">@collection.CollectionName</MudMenuItem>
+            </MudMenu>
+    </MudStack>
+</MudHidden>
+
+@code {
+    [Parameter] public EventCallback<int> OnCategorySelected { get; set; }
+
+    private bool _loading = false;
+    [Parameter]
+    public CollectionViewModel collection { get; set; } = new CollectionViewModel();
+    [Parameter]
+    public IEnumerable<CategoryProductViewModel> Categories { get; set; } = Enumerable.Empty<CategoryProductViewModel>();
+
+    private IEnumerable<IGrouping<string, CategoryProductViewModel>> GroupedCategories => Categories
+        .GroupBy(c => GetCategoryGroupName(c.Name));
+
+    private string GetCategoryGroupName(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return "Khác";
+
+        var lowerName = name.ToLower();
+
+        if (lowerName.Contains("áo")) return "ÁO";
+        if (lowerName.Contains("quần")) return "QUẦN";
+        if (lowerName.Contains("giày") || lowerName.Contains("sneaker")) return "GIÀY";
+
+        return "Khác";
+    }
+
+
+    private void NavigateToCategory(int categoryId)
+    {
+        OnCategorySelected.InvokeAsync(categoryId);
+    }
+
+
+}

@@ -1,0 +1,110 @@
+﻿@using MenShopBlazor.DTOs.Category
+@using MenShopBlazor.Services.Category
+@using MenShopBlazor.DTOs.Collection.ViewModel
+@using MenShopBlazor.Services.Collection
+@inject ICollectionService CollectionService
+@inject ICategoryService CategoryService
+
+
+<MudDrawer Open="@Open"
+           OpenChanged="@OpenChanged"
+           Anchor="Anchor.Left"
+           Overlay="true"
+           Elevation="1"
+           Variant="DrawerVariant.Temporary">
+    <MudDrawerHeader>
+        <MudText Typo="Typo.h6">Danh mục</MudText>
+    </MudDrawerHeader>
+
+    <MudNavMenu Rounded="true" Margin="Margin.Dense" Color="Color.Primary" Class="pa-2">
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <MudTextField @bind-Value="Search"
+                          Label="Tìm kiếm gì đó..."
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          MaxLength="50"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          AdornmentColor="Color.Secondary"
+                          Class="mb-2"
+                          OnKeyUp="OnSearchKeyUp" />
+        </MudHidden>
+
+        @if (_loading)
+        {
+            <MudText>Đang tải danh mục...</MudText>
+        }
+        else
+        {
+            @foreach (var group in GroupedCategories)
+            {
+                <MudNavGroup Title="@group.Key">
+                    @foreach (var cat in group)
+                    {
+                        <MudNavLink OnClick="@(() => SelectCategory(cat.CategoryId))">@cat.Name</MudNavLink>
+                    }
+                </MudNavGroup>
+            }
+
+            <MudNavGroup Title="Bộ sưu tập">
+                <MudNavLink OnClick="@(() => SelectCategory(collection.CollectionId))">@collection.CollectionName</MudNavLink>
+            </MudNavGroup>
+        }
+    </MudNavMenu>
+</MudDrawer>
+
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter]
+    public string Search { get; set; }
+    [Parameter]
+    public EventCallback<string> SearchChanged { get; set; }
+    [Parameter] public EventCallback<int> OnCategorySelected { get; set; }
+    [Parameter]
+    public CollectionViewModel collection { get; set; } = new CollectionViewModel();
+    [Parameter]
+    public IEnumerable<CategoryProductViewModel> Categories { get; set; } = Enumerable.Empty<CategoryProductViewModel>();
+
+    private bool _loading = false;
+
+    private IEnumerable<IGrouping<string, CategoryProductViewModel>> GroupedCategories => Categories
+        .GroupBy(c => GetCategoryGroupName(c.Name));
+
+    private string GetCategoryGroupName(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return "Khác";
+
+        var lowerName = name.ToLower();
+
+        if (lowerName.Contains("áo")) return "ÁO";
+        if (lowerName.Contains("quần")) return "QUẦN";
+        if (lowerName.Contains("giày") || lowerName.Contains("sneaker")) return "GIÀY";
+
+        return "Khác";
+    }
+
+    private async Task SelectCategory(int id)
+    {
+        if (OnCategorySelected.HasDelegate)
+            await OnCategorySelected.InvokeAsync(id);
+
+        await OpenChanged.InvokeAsync(false);
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchChanged.InvokeAsync(Search);
+        }
+    }
+    private void NavigateToCategory(int categoryId)
+    {
+        OnCategorySelected.InvokeAsync(categoryId);
+    }
+}
+
+
+

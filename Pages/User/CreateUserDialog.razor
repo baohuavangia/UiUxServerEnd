@@ -1,0 +1,242 @@
+﻿@using MenShopBlazor.DTOs.Account
+@using MenShopBlazor.DTOs.AddressDTO
+@using MenShopBlazor.Services.Token
+@using MenShopBlazor.Services.Address
+@using MenShopBlazor.Services.Account
+@using MenShopBlazor.DTOs.Branch
+@using MenShopBlazor.Services.Branch
+@using MenShopBlazor.Services.Admin
+@using MenShopBlazor.Shared
+@using static MenShopBlazor.DTOs.AddressDTO.AddressDTO;
+@inject IAdminService AdminService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IAddressService AddressService
+@inject ITokenService TokenService
+@inject IBranchService BranchService
+
+<MudDialog MaxWidth="MaxWidth.Medium">
+    <DialogContent>
+        <MudText Typo="Typo.h6">Thêm người dùng mới</MudText>
+
+        <MudForm @ref="form" Model="user" Validated="OnValidated">
+            <MudTextField @bind-Value="user.FullName"
+                          Label="Họ và tên"
+                          For="@(() => user.FullName)"
+                          Margin="Margin.Dense"
+                          Variant="Variant.Outlined"
+                          Required="true" />
+
+            <MudTextField @bind-Value="user.Email"
+                          Label="Email"
+                          For="@(() => user.Email)"
+                          Margin="Margin.Dense"
+                          Variant="Variant.Outlined"
+                          Required="true" />
+
+            <MudTextField @bind-Value="user.Password"
+                          Label="Mật khẩu"
+                          InputType="InputType.Password"
+                          For="@(() => user.Password)"
+                          Margin="Margin.Dense"
+                          Variant="Variant.Outlined"
+                          Required="true" />
+
+            <MudRadioGroup T="bool" @bind-Value="user.Gender">
+                <MudRadio Value="true" Label="Nam" />
+                <MudRadio Value="false" Label="Nữ" />
+            </MudRadioGroup>
+
+            <MudTextField @bind-Value="user.PhoneNumber"
+                          Label="Số điện thoại"
+                          For="@(() => user.PhoneNumber)"
+                          Margin="Margin.Dense"
+                          Variant="Variant.Outlined"
+                          Required="true" />
+
+          
+            <MudDatePicker @bind-Date="user.BirthDate"
+                           Label="Ngày sinh"
+                           Required="true"
+                           Variant="Variant.Outlined"
+                           MaxDate="@DateTime.Today"
+                           DateFormat="dd/MM/yyyy" />
+            @if (!isDataLoaded)
+            {
+                <MudSkeleton Animation="Animation.Wave" />
+            }
+            else
+            {
+                @if (role != "BranchManager")
+                {
+                    <MudSelect T="int?" Label="Chi Nhánh" Margin="Margin.Dense"
+                               Variant="Variant.Outlined"
+                               @bind-Value="user.BranchId"
+                               Required="true">
+                        @foreach (var branch in branches)
+                        {
+                            <MudSelectItem Value="@(branch.BranchId as int?)">@branch.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+                else
+                {
+                    <MudSelect T="int?" Label="Chi Nhánh" Margin="Margin.Dense"
+                               Variant="Variant.Outlined"
+                               @bind-Value="user.BranchId"
+                               Disabled
+                               Required="true">
+                        @foreach (var branch in branches)
+                        {
+                            <MudSelectItem Value="@(branch.BranchId as int?)">@branch.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+            }
+
+
+            <MudSelect T="string"
+                       Label="Vai trò"
+                       Margin="Margin.Dense"
+                       Variant="Variant.Outlined"
+                       @bind-Value="user.Role"
+                       Required="true"
+                       Disabled="@(!string.IsNullOrWhiteSpace(Role))">
+                @foreach (var role in roles)
+                {
+                    <MudSelectItem Value="@role.Name">@role.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+
+            @if (string.Equals(user.Role, "Shipper", StringComparison.OrdinalIgnoreCase))
+            {
+                <AddressSelector Value="@user.WorkArea" ValueChanged="v => user.WorkArea = v" />
+
+            }
+
+
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="CreateUserAsync">Tạo</MudButton>
+        <MudButton OnClick="Cancel">Hủy</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; }
+
+    [Parameter]
+    public string Role { get; set; }
+    private bool isDataLoaded = false;
+    private MudForm form;
+    private string role;
+    private AccountRegisterDTO user = new()
+    {
+        WorkArea = new AddressInfo()
+    };
+
+    private IEnumerable<RoleDTO> roles = new List<RoleDTO>();
+    private List<BranchViewModel> branches = new();
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Role))
+        {
+            user.Role = Role;
+        }
+        role = await TokenService.GetRoleAsync();
+        await LoadRolesAsync();
+        isDataLoaded = true;
+    }
+
+    private async Task LoadRolesAsync()
+    {
+        var result = await AdminService.GetRolesAsync();
+
+        if (result.IsSuccess)
+        {
+            var allRoles = result.Data;
+
+            if (string.Equals(role, "BranchManager", StringComparison.OrdinalIgnoreCase))
+            {
+                var userResponse = await AdminService.GetCurrentUserAsync();
+                var currentUser = userResponse?.Data;
+                if (currentUser?.BranchId != null)
+                {
+                    user.BranchId = currentUser.BranchId;
+                }
+                roles = allRoles.Where(r =>
+                    r.Name.Equals("Shipper", StringComparison.OrdinalIgnoreCase) ||
+                    r.Name.Equals("BranchEmployee", StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+            else
+            {
+                roles = allRoles;
+            }
+        }
+        else
+        {
+            Snackbar.Add(result.Message ?? "Không thể tải danh sách vai trò", Severity.Error);
+        }
+
+        var response = await BranchService.GetAllBranchesAsync();
+        if (response != null && response.Data != null)
+        {
+            branches = response.Data.ToList();
+        }
+    }
+
+    private void OnValidated()
+    {
+        StateHasChanged();
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+
+    private async Task CreateUserAsync()
+    {
+        await form.Validate();
+        if (user.Role == "Shipper")
+        {
+            if (
+                string.IsNullOrWhiteSpace(user.WorkArea.ProvinceName) ||
+                string.IsNullOrWhiteSpace(user.WorkArea.DistrictName) ||
+                string.IsNullOrWhiteSpace(user.WorkArea.WardName))
+            {
+                Snackbar.Add("Vui lòng điền đầy đủ thông tin địa chỉ làm việc!", Severity.Warning);
+                return;
+            }
+        }
+        if (role == "BranchManager" && user.BranchId == null)
+        {
+            Snackbar.Add("Không tìm thấy chi nhánh của người dùng hiện tại", Severity.Error);
+            return;
+        }
+        if (!form.IsValid)
+        {
+            Snackbar.Add("Vui lòng kiểm tra các trường bắt buộc.", Severity.Warning);
+            return;
+        }
+        user.WorkArea = user.WorkArea;
+        user.BranchId = user.BranchId;
+        var response = await AdminService.CreateUserAsync(user);
+        if (response.IsSuccess)
+        {
+            Snackbar.Add($"{response.Message}", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        else
+        {
+            Snackbar.Add($"{response.Message}", Severity.Error);
+        }
+    }
+}

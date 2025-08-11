@@ -1,0 +1,279 @@
+﻿@using MenShopBlazor.Services.Token
+@using MenShopBlazor.DTOs.Category
+@using MenShopBlazor.Services.Category
+@using MenShopBlazor.DTOs.Collection.ViewModel
+@using MenShopBlazor.Services.Collection
+@using MenShopBlazor.Shared
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inherits LayoutComponentBase
+@inject NavigationManager NavManager
+@inject ITokenService TokenService
+@inject ICollectionService CollectionService
+@inject ICategoryService CategoryService
+@inject IJSRuntime JSRuntime
+@inject CartState CartState
+
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout Class="d-flex flex-column min-vh-100">
+    @* @if (!IsAuthPage)
+    { *@
+        @if (IsCustomerView || IsGuestView)
+        {
+            @if (IsCheckoutPage)
+            {
+                <MudAppBar Elevation="0" Class="bg-white" >
+                    <MudContainer MaxWidth="MaxWidth.Large" Class="d-flex align-items-center justify-content-between">
+                        <MudLink Href="/">
+                            <MudImage Src="/imgs/logo-MS.png" Alt="Logo" Style="width: 140px" />
+                        </MudLink>
+                        <MudSpacer />
+                        <MudItem Class="d-flex justify-content-center align-items-center">
+                            <MudIconButton Icon="@Icons.Material.Filled.Phone" OnClick="@ToggleCustomerDrawer" Color="Color.Dark" />
+                            <MudText Typo="Typo.subtitle2" Style="@($"color:{Colors.Gray.Darken1};")">0868932254</MudText>
+                        </MudItem>
+                    </MudContainer>
+                </MudAppBar>
+            }
+            else
+            {        
+                <MudAppBar Elevation="0" class="bg-white">
+                    <MudContainer MaxWidth="MaxWidth.Large" Class="d-flex align-items-center justify-content-around ">
+                        <MudLink Href="/">
+                        <MudLink Href="/" Class="d-flex align-items-center" Style="text-decoration: none;">
+                            <MudImage Src="/imgs/logo-MS.png" Alt="Logo" Style="width: 140px;" />
+                        </MudLink>
+
+                        </MudLink>
+
+                    <ProductMenu OnCategorySelected="NavigateToCategory" Categories="categories" Collection="collection" />
+
+                        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                        <MudIconButton Icon="@Icons.Material.Filled.Menu" OnClick="@ToggleCustomerDrawer" Color="Color.Dark" />
+                        </MudHidden>
+
+                        <MudSpacer />
+                    <MudHidden Breakpoint="Breakpoint.MdAndDown">
+                        <MudTextField T="string"
+                                      @bind-Value="Search"
+                                      Label="Tìm kiếm gì đó..."
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      MaxLength="50"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                      AdornmentColor="Color.Secondary"
+                                      Class="mx-2"
+                                      OnKeyUp="OnSearchKeyUp" />
+                    </MudHidden>
+
+
+                    <MudBadge Content="@CartState.Items.Sum(x => x.Quantity)"
+                              Color="Color.Error"
+                              Overlap="true"
+                              Class="mx-2"
+                              Origin="Origin.CenterRight">
+                        <MudIconButton Icon="@Icons.Material.Filled.ShoppingCart"
+                                       Color="Color.Default"
+                                       OnClick="@(() => NavManager.NavigateTo("/cart"))" />
+                    </MudBadge>
+
+                    <UserMenu Role="_role" IsAuthenticated="_isLoggedIn" />
+
+                    </MudContainer>
+                </MudAppBar>
+            @if ((!IsManagementView && !_hideNavMenu))
+            {
+                <CategoryDrawer Open="_customerDrawerOpen"
+                                OpenChanged="@((bool value) => _customerDrawerOpen = value)"
+                                Search="@Search" SearchChanged="OnSearchChanged"
+                                OnCategorySelected="NavigateToCategory" Categories="categories" Collection="collection" />
+
+            }
+            }
+        }
+        else if (IsManagementView)
+        {
+            <MudAppBar Elevation="25" Style="@($"background:{Colors.LightBlue.Lighten5};")">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Dark" Edge="Edge.Start" OnClick="@ToggleAdminDrawer" />
+                <MudLink Href="/">
+                    <MudText Typo="Typo.h5" Class="ml-3 d-flex align-items-center">
+                    <MudImage Src="/imgs/logo-MS.png" Alt="Logo" Style="width: 140px" />
+                    </MudText>
+                </MudLink>
+
+                <MudSpacer />
+                <MudIconButton Icon="@Icons.Material.Outlined.Notifications" Color="Color.Dark" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Search" Color="Color.Dark" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Settings" Color="Color.Dark" />
+            <UserMenu Role="_role" IsAuthenticated="_isLoggedIn" />
+
+            </MudAppBar>
+
+            @if (!_hideNavMenu && _isLoggedIn)
+            {
+            <MudDrawer @bind-Open="_adminDrawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
+                    <NavMenu />
+                </MudDrawer>
+            }
+        }
+
+
+    <MudMainContent Style="@($"background:{Colors.Gray.Lighten4};")" Class="pb-10">
+        @Body
+    </MudMainContent>
+    @if (IsCustomerView || IsGuestView)
+    {      
+    <Footer />
+    }
+</MudLayout>
+
+@code {
+    private bool _customerDrawerOpen = false;
+    private bool _adminDrawerOpen = false;
+    bool _hideNavMenu = false;
+    private string? _role;
+    private bool _isLoggedIn = false;
+    public string Search { get; set; } = "";
+    private IEnumerable<CategoryProductViewModel> categories = new List<CategoryProductViewModel>();
+    private CollectionViewModel collection = new();
+    private bool _loading = false;
+
+    private static readonly List<string> ManagementRoles = new()
+    {
+        "Admin", "BranchManager", "BranchEmployee", "Factory",
+        "RevenueManager", "Shipper", "WarehouseManager"
+    };
+
+    private bool IsCustomerView => _isLoggedIn && _role == "Customer";
+    private bool IsGuestView => !_isLoggedIn;
+    private bool IsManagementView => _isLoggedIn && ManagementRoles.Contains(_role);
+    private bool IsAuthPage => NavManager.Uri.Contains("/login") || NavManager.Uri.Contains("/register");
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!_isLoggedIn)
+        {
+            var existingId = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "anonymousId");
+
+            if (string.IsNullOrEmpty(existingId))
+            {
+                var newId = Guid.NewGuid().ToString();
+                await JSRuntime.InvokeVoidAsync("localStorage.setItem", "anonymousId", newId);
+                Console.WriteLine("id nặc danh: " + newId);
+            }
+        }
+
+        await RefreshRole();
+        await LoadCategoriesAsync();
+        await LoadCollection();
+        UpdateNavVisibility(NavManager.Uri);
+
+        NavManager.LocationChanged += OnLocationChanged;
+        CartState.OnChange += StateHasChanged;
+    }
+    
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await RefreshRole();
+        UpdateNavVisibility(e.Location);
+        await InvokeAsync(StateHasChanged);
+    }
+    private async Task RefreshRole()
+    {
+        var newRole = await TokenService.GetRoleAsync();
+        if (_role != newRole)
+        {
+            _role = newRole;
+            _isLoggedIn = !string.IsNullOrWhiteSpace(newRole);
+        }
+        StateHasChanged();
+
+    }
+
+    void UpdateNavVisibility(string uri)
+    {
+        var path = new Uri(uri).AbsolutePath.ToLowerInvariant();
+
+        // Ẩn nav menu chỉ khi ở login hoặc register, KHÔNG dựa vào _isLoggedIn
+        _hideNavMenu = path is "/login" or "/register";
+    }
+
+
+    void ToggleCustomerDrawer() => _customerDrawerOpen = !_customerDrawerOpen;
+    void ToggleAdminDrawer() => _adminDrawerOpen = !_adminDrawerOpen;
+
+    
+    private void NavigateToHome()
+    {
+        NavManager.NavigateTo($"/home");
+    }
+    void NavigateToCategory(int categoryId)
+    {
+        NavManager.NavigateTo($"/san-pham?categoryId={categoryId}");
+    }
+    public void Dispose()
+    {
+        CartState.OnChange -= StateHasChanged;
+    }
+    private bool IsCheckoutPage => NavManager.Uri.Contains("/cart/checkout");
+
+    private async Task OnSearchChanged(string val)
+    {
+        Search = val;
+        await SearchProducts();
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchProducts();
+        }
+    }
+
+
+    private async Task SearchProducts()
+    {
+        if (!string.IsNullOrWhiteSpace(Search))
+            NavManager.NavigateTo($"/san-pham?search={Uri.EscapeDataString(Search)}");
+        else
+            NavManager.NavigateTo("/san-pham");
+    }
+
+
+
+
+    private async Task LoadCategoriesAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var loadTask = CategoryService.GetAllCategoriesAsync();
+        var delayTask = Task.Delay(1000);
+        await Task.WhenAll(loadTask, delayTask);
+
+        categories = loadTask.Result;
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadCollection()
+    {
+        var reponse = await CollectionService.GetCurrentCollection();
+        if (reponse.IsSuccess)
+        {
+            collection = reponse?.Data ?? new CollectionViewModel();
+        }
+    }
+}
+
+
+
+

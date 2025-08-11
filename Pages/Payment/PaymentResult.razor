@@ -1,0 +1,197 @@
+﻿@page "/payment-result"
+
+@using MenShopBlazor.DTOs.VNPay
+@using MenShopBlazor.DTOs.Cart
+@using MenShopBlazor.Services.Payment
+@using MenShopBlazor.Services.Token
+@inject NavigationManager NavManager
+@inject HttpClient Http
+@inject CartState CartState
+@using MenShopBlazor.Services.Order
+@inject IOrderService orderService
+@inject ISnackbar Snackbar
+@inject ITokenService TokenService
+@inject IPaymentService paymentService
+@inject IDialogService DialogService
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization;
+@using Microsoft.AspNetCore.Components.Authorization;
+
+
+<MudContainer Class="mt-5 px-8" Style="position: relative;">
+    @if (!dataLoaded)
+    {
+        <MudGrid Justify="Justify.Center">
+            <MudItem xs="12" lg="6" md="6">
+                <MudSkeleton Height="200px" SkeletonType="SkeletonType.Rectangle" />
+                <MudCardContent>
+                    <MudSkeleton Width="50%" Height="42px" />
+                    <MudSkeleton Width="80%" />
+                    <MudSkeleton Width="100%" />
+                </MudCardContent>
+            </MudItem>
+        </MudGrid>
+        <MudOverlay @bind-Visible="visible" DarkBackground="true" ZIndex="9999" AutoClose="true" />
+    }
+    else
+    {
+
+            <MudGrid Justify="Justify.Center">
+                <MudItem xs="12" lg="6" md="6" Class="m">
+                    <MudCard>
+                        <MudCardHeader>
+                                <MudIconButton Icon="@Icons.Material.Filled.CheckCircleOutline" Color="Color.Success" Size="Size.Large"/>
+                                <MudText Typo="Typo.h5" Align="Align.Center">THANH TOÁN THÀNH CÔNG</MudText>
+                        </MudCardHeader>
+                    <MudDivider Class="my-2" />
+
+                        <MudCardContent>
+                            @if (success)
+                            {
+                                <MudText>Mã đơn hàng: <b>@orderId</b></MudText>
+                                <MudText>Mã giao dịch: <b>@transactionCode</b></MudText>
+                                <MudText>Số tiền: <b>@string.Format("{0:N0} ₫", amount)</b></MudText>
+                            }
+                            else
+                            {
+                                <MudText Color="Color.Error">
+                                    Thanh toán thất bại: @errorMessage
+                                </MudText>
+                            }
+                        </MudCardContent>
+
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="BackToOrder" Class="my-2 ">
+                                @((userRole == "Customer") ? "Chi tiết hóa đơn" : "Quay lại")
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" OnClick="ShowInvoiceDialog" Class="m-2">
+                                In hóa đơn
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </MudGrid>
+
+    }
+</MudContainer>
+
+
+@code {
+    private string userRole = string.Empty;
+    private bool isLoading = true;
+    private bool success = false;
+    private string orderId = string.Empty;
+    private string transactionCode = string.Empty;
+    private string orderInfo = string.Empty;
+    private decimal amount;
+    private string errorMessage = string.Empty;
+    private bool visible;
+    private bool dataLoaded;
+    private decimal customerPaid;
+    private decimal change;
+
+    public async void OpenOverlay()
+    {
+        visible = true;
+        dataLoaded = false;
+        await Task.Delay(3000);
+        dataLoaded = true;
+        visible = false;
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        userRole = await TokenService.GetRoleAsync();
+        try
+        {
+            var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
+            var query = uri.Query;
+            var result = await paymentService.HandleVNPayCallbackAsync(query);
+            orderId = result.OrderId;
+            transactionCode = result.TransactionId;
+            amount = result.Amount;
+            orderInfo = result.OrderDescription;
+            success = true;
+            var decreaseResult = await orderService.AutoDecreaseStockOffline(orderId);
+            Console.WriteLine($"Trừ tồn kho kết quả: {decreaseResult}");
+            Snackbar.Add("Thanh toán thành công qua VNPay!", Severity.Success);
+            CartState.SetItems(new List<CartDetailViewModel>());
+            StateHasChanged();
+        }
+        catch
+        {
+            var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+
+            orderId = query["orderId"];
+            transactionCode = query["transactionCode"];
+            amount = decimal.Parse(query["amount"]);
+            orderInfo = query["method"];
+            if (query["method"] == "COD")
+            {
+                amount = decimal.Parse(query["amount"]);
+                customerPaid = 0;
+                change = 0;
+            }
+            else
+            {
+                decimal.TryParse(query["customerPaid"], out customerPaid);
+                decimal.TryParse(query["change"], out change);
+            }
+
+            success = true;
+            CartState.SetItems(new List<CartDetailViewModel>());
+            StateHasChanged();
+        }
+
+        await Task.Delay(800);
+        dataLoaded = true;
+    }
+
+
+    private void BackToOrder()
+    {
+        if (userRole == "Customer")
+        {
+            NavManager.NavigateTo($"/profile/orders/{orderId}");
+        }
+        else
+        {
+            NavManager.NavigateTo("/create-order");
+        }
+    }
+
+    private void GoToCustomerOrders()
+    {
+        NavManager.NavigateTo("/don-hang-cua-toi");
+    }
+    private async Task ShowInvoiceDialog()
+    {
+        try
+        {
+            var parameters = new DialogParameters
+            {
+                { "OrderId", orderId },
+                { "TransactionCode", transactionCode },
+                { "Amount", amount },
+                { "OrderInfo", orderInfo },
+                { "CustomerPaid", customerPaid },
+                { "Change", change }
+            };
+
+
+            var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small };
+
+            await DialogService.ShowAsync<InvoiceDialog>("Thông tin hóa đơn", parameters, options);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Lỗi khi mở dialog: {ex.Message}", Severity.Error);
+        }
+    }
+
+
+
+}
